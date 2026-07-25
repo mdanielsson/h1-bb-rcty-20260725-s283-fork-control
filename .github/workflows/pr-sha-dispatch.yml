@@ -1,0 +1,61 @@
+name: S283 external PR SHA checkout control
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        type: number
+        required: true
+        description: Pull request number whose current head should be tested
+      commit-sha:
+        type: string
+        required: true
+        description: Exact current pull request head SHA
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      actual-sha: ${{ steps.validate.outputs.actual_sha }}
+    steps:
+      - name: Validate current PR head SHA
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr-number }}
+          COMMIT_SHA: ${{ inputs.commit-sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          ACTUAL_SHA=$(gh pr view "$PR_NUMBER" \
+            --repo "$REPO" \
+            --json headRefOid \
+            --jq '.headRefOid')
+          if [ "$ACTUAL_SHA" != "$COMMIT_SHA" ]; then
+            echo "::error::PR head SHA mismatch"
+            exit 1
+          fi
+          echo "actual_sha=$ACTUAL_SHA" >> "$GITHUB_OUTPUT"
+
+  checkout-pr-sha:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact PR head SHA from default base repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit-sha }}
+          persist-credentials: false
+
+      - name: Execute inert checked-out probe
+        env:
+          EXPECTED_SHA: ${{ needs.verify.outputs.actual-sha }}
+        run: |
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          python3 fork_probe.py
+
