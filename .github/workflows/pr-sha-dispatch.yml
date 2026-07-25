@@ -51,7 +51,6 @@ jobs:
       SNOWFLAKE_ACCOUNT: ksplyzy-hackerone_test_gcp_uscentral1_1
       SNOWFLAKE_USER: H1_BB_RCTY_20260725_S283_OIDC_FORK_CONTROL
       SNOWFLAKE_ROLE: PUBLIC
-      SNOWFLAKE_AUDIENCE: urn:snowflake:h1:gd35286:s283-external-fork
     steps:
       - name: Checkout exact PR head SHA from default base repository
         uses: actions/checkout@v6
