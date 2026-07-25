@@ -42,8 +42,16 @@ jobs:
   checkout-pr-sha:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 7
+    environment: H1_BB_RCTY_20260725_S283_CONTROL
     permissions:
       contents: read
+      id-token: write
+    env:
+      SNOWFLAKE_ACCOUNT: ksplyzy-hackerone_test_gcp_uscentral1_1
+      SNOWFLAKE_USER: H1_BB_RCTY_20260725_S283_OIDC_FORK_CONTROL
+      SNOWFLAKE_ROLE: PUBLIC
+      SNOWFLAKE_AUDIENCE: urn:snowflake:h1:gd35286:s283-external-fork
     steps:
       - name: Checkout exact PR head SHA from default base repository
         uses: actions/checkout@v6
@@ -51,11 +59,86 @@ jobs:
           ref: ${{ inputs.commit-sha }}
           persist-credentials: false
 
-      - name: Execute inert checked-out probe
+      - name: Install Snowflake CLI and mint OIDC token
+        uses: snowflakedb/snowflake-actions@2e71eae6178b79a47e63fdad96427c8335846e49
+        with:
+          use-oidc: true
+          cli-version: "3.16.0"
+
+      - name: Record allowlisted OIDC claims and fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SNOWFLAKE_TOKEN:-}"
+          echo "::add-mask::${SNOWFLAKE_TOKEN}"
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+
+          token = os.environ["SNOWFLAKE_TOKEN"]
+
+          def decode(segment):
+              segment += "=" * (-len(segment) % 4)
+              return json.loads(base64.urlsafe_b64decode(segment))
+
+          protected, payload, _ = token.split(".", 2)
+          header = decode(protected)
+          claims = decode(payload)
+          header_allowlist = ("alg", "kid", "typ")
+          claim_allowlist = (
+              "iss",
+              "aud",
+              "sub",
+              "repository",
+              "repository_id",
+              "repository_owner",
+              "repository_owner_id",
+              "repository_visibility",
+              "event_name",
+              "ref",
+              "ref_type",
+              "sha",
+              "head_ref",
+              "base_ref",
+              "actor",
+              "actor_id",
+              "workflow",
+              "workflow_ref",
+              "workflow_sha",
+              "environment",
+              "runner_environment",
+              "iat",
+              "nbf",
+              "exp",
+              "jti",
+          )
+          print(
+              json.dumps(
+                  {
+                      "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
+                      "header": {
+                          key: header[key]
+                          for key in header_allowlist
+                          if key in header
+                      },
+                      "claims": {
+                          key: claims[key]
+                          for key in claim_allowlist
+                          if key in claims
+                      },
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+          )
+          PY
+
+      - name: Execute fork-controlled Snowflake identity probe
         env:
           EXPECTED_SHA: ${{ needs.verify.outputs.actual-sha }}
         run: |
           ACTUAL_SHA=$(git rev-parse HEAD)
           test "$ACTUAL_SHA" = "$EXPECTED_SHA"
           python3 fork_probe.py
-
