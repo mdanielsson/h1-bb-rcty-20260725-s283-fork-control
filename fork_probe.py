@@ -7,7 +7,7 @@ import os
 print(
     json.dumps(
         {
-            "marker": "S283_BASE_CONTROL",
+            "marker": "S283_EXTERNAL_FORK_HEAD",
             "actor": os.environ.get("GITHUB_ACTOR"),
             "event": os.environ.get("GITHUB_EVENT_NAME"),
             "repository": os.environ.get("GITHUB_REPOSITORY"),
@@ -16,4 +16,3 @@ print(
         sort_keys=True,
     )
 )
-
